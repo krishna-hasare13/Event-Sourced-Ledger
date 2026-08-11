@@ -1,0 +1,34 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Account {
+  id        String   @id @default(uuid())
+  name      String
+  type      String   // "asset" | "liability" | "equity" | "credit"
+  createdAt DateTime @default(now())
+  entries   Entry[]
+}
+
+model Transaction {
+  id          String   @id @default(uuid())
+  description String?
+  createdAt   DateTime @default(now())
+  entries     Entry[]
+}
+
+model Entry {
+  id            String      @id @default(uuid())
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id])
+  accountId     String
+  account       Account     @relation(fields: [accountId], references: [id])
+  amount        Decimal     @db.Decimal(20, 4)
+  createdAt     DateTime    @default(now())
+
+  @@index([accountId, createdAt])
+}

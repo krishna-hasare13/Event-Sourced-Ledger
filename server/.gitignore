@@ -1,0 +1,65 @@
+node_modules
+# Keep environment variables out of version control
+.env
+
+/generated/prisma
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Build / production
+dist/
+build/
+.next/
+out/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# Testing / coverage
+coverage/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Cache
+.cache/
+.parcel-cache/
+.vite/
+
+# Python (if backend uses Python)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Database files
+*.sqlite
+*.sqlite3
+*.db
+
+# Uploaded files
+uploads/*
+!uploads/.gitkeep
