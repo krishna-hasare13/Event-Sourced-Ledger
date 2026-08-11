@@ -95,6 +95,7 @@ Server:
 cd server
 cp .env.example .env
 npm install
+npx prisma generate
 npx prisma migrate deploy
 npm start
 ```
@@ -149,3 +150,10 @@ GitHub Actions workflow: `.github/workflows/ci.yml`
 On push and pull request:
 - Server: `npm ci`, `npm test`
 - Client: `npm ci`, `npm run lint`, `npm run build`
+
+## Troubleshooting
+
+- `docker compose up` fails with `Bind for 0.0.0.0:5432 failed: port is already allocated`:
+  - Another local PostgreSQL service or container is already using port `5432`.
+  - Stop the existing process/container, or run tests against the existing local Postgres instance.
+  - Example local container check: `docker ps`.
