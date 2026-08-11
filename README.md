@@ -1,109 +1,151 @@
-# Ledger — Double-Entry Accounting Backend
+# Ledger - Double-Entry Backend Systems Project
 
-A backend-focused project built to demonstrate production-grade backend engineering: transactional integrity, concurrency safety, and idempotent APIs — not just CRUD.
+A backend-focused ledger project built to demonstrate correctness under concurrency: transactional integrity, ownership-scoped authorization, idempotent writes, and traceable audit history.
 
-Full-stack (Express + PostgreSQL/Prisma + React), but the point of this project is the **backend correctness guarantees**, detailed below.
-
----
-
-## Why this project exists
-
-Most portfolio CRUD apps don't touch the problems that actually break financial/transactional systems in production: race conditions on concurrent writes, partial failures, retried requests, and floating-point money bugs. This project is a small, focused system built specifically to get those right.
-
----
+Stack:
+- Server: Express + Prisma + PostgreSQL
+- Client: React + Vite
 
 ## Core guarantees
 
-**1. Double-entry integrity**
-Every transaction is a set of ≥2 entries whose amounts sum to exactly zero, enforced in `ledgerValidation.js`. No transaction can be persisted unless it balances — money can't be created or destroyed by the system.
+1. Double-entry integrity
+- Every transaction must contain at least two entries.
+- Entries must include both positive and negative amounts.
+- Entries must sum to zero exactly.
 
-**2. No floating-point drift**
-Amounts are converted to integer cents before any arithmetic (`amountToCents` / `centsToAmount`) and only converted back to decimal for storage/display. Avoids the classic `0.1 + 0.2 !== 0.3` class of bugs in financial calculations.
+2. No floating-point drift
+- Monetary arithmetic uses integer cents before persistence.
 
-**3. Concurrency-safe transfers**
-Transfers between accounts run inside a single DB transaction that:
-- Locks all involved account rows with `SELECT ... FOR UPDATE`
-- Locks rows in a **consistent sorted order** across concurrent requests, specifically to prevent deadlocks when two transactions touch the same accounts in opposite order
-- Re-checks account balances *after* acquiring locks, so overdraft checks can't race
+3. Concurrency-safe transfer path
+- Transfer writes run inside a single database transaction.
+- Account rows are locked with `SELECT ... FOR UPDATE` in sorted account-id order to avoid deadlocks.
+- Overdraft checks are performed after locks are acquired.
 
-Verified with a concurrent-load test (`testTransactions.js`) that fires simultaneous transfers against shared accounts and asserts the exact number that should succeed given the available balance — confirming no double-spend and no lost updates under contention.
+4. Persistent idempotency keys
+- `POST /api/transactions` accepts `Idempotency-Key`.
+- Keys are stored in PostgreSQL (`IdempotencyKey` table), not in process memory.
+- Same key + same payload returns the original transaction.
+- Same key + different payload is rejected.
+- Keys are retained for 24 hours and cleaned up opportunistically on idempotent transaction attempts.
 
-**4. Overdraft protection**
-Asset accounts cannot go negative. Enforced at the database-transaction level, not just in application logic, so it holds even under concurrent requests.
+5. Authentication and ownership
+- JWT auth via `POST /api/auth/register` and `POST /api/auth/login`.
+- Accounts are owned by users (`Account.ownerId`).
+- `/api/accounts` and `/api/transactions` require a bearer token.
+- Account reads and audit endpoints are ownership-scoped.
+- Requests for non-owned accounts return 404.
 
-**5. Idempotent writes**
-POST `/transactions` accepts an `Idempotency-Key` header. Retried requests with the same key return the original result instead of creating a duplicate transaction; the same key reused with a *different* payload is rejected. This protects against duplicate transactions from client retries or network failures.
+6. Observability and request tracing
+- Structured JSON logging through `pino`.
+- Request-id middleware attaches `X-Request-Id`.
+- Error responses include `requestId`.
+- Transaction attempts log request id, user id, account ids, idempotency key, outcome, and duration.
 
-**6. Auditability**
-Every account exposes a full audit trail (`/accounts/:id/audit`) that replays its entries in order and reconstructs a running balance with a human-readable explanation per entry — so every balance is fully traceable back to the transactions that produced it.
+7. API guardrails
+- Route-layer validation uses `zod`.
+- Cursor pagination is enabled for:
+  - `GET /api/accounts`
+  - `GET /api/accounts/:id/audit`
+- Rate limiting is applied to `/api/auth/*` and `/api/transactions`.
+- OpenAPI document is served at `GET /api/docs`.
 
----
+## API overview
 
-## Architecture
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/accounts`
+- `GET /api/accounts?cursor=&limit=`
+- `GET /api/accounts/:id`
+- `GET /api/accounts/:id/balance?asOf=`
+- `GET /api/accounts/:id/audit?cursor=&limit=`
+- `POST /api/transactions` (supports `Idempotency-Key`)
 
-```
-client/          React (Vite) UI — accounts table, transfer form, audit trail view
-server/
-  routes/        Thin HTTP layer (accounts, transactions)
-  services/      Business logic: validation, transaction orchestration, balances, audit
-  db/            Prisma client (Postgres)
-  prisma/        Schema + migrations
-```
+## Running locally (Docker-first)
 
-**Data model:** `Account` → `Entry` ← `Transaction`. Balances are never stored directly — they're always derived by summing entries, so the ledger is the single source of truth and balances can be recomputed as-of any point in time (`GET /accounts/:id/balance?asOf=...`).
+### Recommended path: Docker Compose
 
----
-
-## API
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/accounts` | Create an account (`name`, `type`: asset\|liability\|equity\|credit) |
-| `GET` | `/api/accounts` | List all accounts |
-| `GET` | `/api/accounts/:id` | Get a single account |
-| `GET` | `/api/accounts/:id/balance?asOf=` | Get current or historical balance |
-| `GET` | `/api/accounts/:id/audit` | Full audit trail with running balance |
-| `POST` | `/api/transactions` | Create a transaction (entries must sum to zero). Supports `Idempotency-Key` header |
-
----
-
-## Running locally
+From the repository root:
 
 ```bash
-# Server
-cd server
-npm install
-# set DATABASE_URL in a .env file (PostgreSQL connection string)
-npx prisma migrate deploy
-npm start        # or: node index.js
+docker compose up --build
+```
 
-# Client
+This starts:
+- PostgreSQL on port `5432`
+- Server on port `4000`
+
+Then run the client separately:
+
+```bash
 cd client
 npm install
 npm run dev
 ```
 
-Run backend tests:
+Create `client/.env` from `client/.env.example` if needed.
+
+### Manual path (without Docker)
+
+1. Start PostgreSQL manually.
+2. Configure environment files.
+
+Server:
+
 ```bash
 cd server
-npx jest
+cp .env.example .env
+npm install
+npx prisma migrate deploy
+npm start
 ```
 
-Run the concurrency stress test (server must be running against a real DB):
+Client:
+
 ```bash
-node server/testTransactions.js
+cd client
+cp .env.example .env
+npm install
+npm run dev
 ```
 
----
+## Environment variables
 
-## Known limitations / honest trade-offs
+Server (`server/.env.example`):
+- `DATABASE_URL`
+- `JWT_SECRET`
+- `PORT`
+- `LOG_LEVEL`
+- `TEST_DATABASE_URL` (optional, for integration tests)
 
-- **Idempotency keys are stored in-memory** (`Map`), so they don't survive a server restart and won't work across multiple server instances. In a real deployment this would move to Redis or a DB table with a TTL — noted here deliberately rather than hidden.
-- **No authentication/authorization** — any client can act on any account. Out of scope for this project's focus (transactional correctness), but would be required before this touches real money.
-- **Not literal event sourcing** — despite the project name, this is an append-only ledger with balances derived by aggregation, not a system that rebuilds state by replaying a stored event log through handlers. The append-only + derived-state pattern is what actually matters for correctness here; the name is aspirational and worth revisiting.
+Client (`client/.env.example`):
+- `VITE_API_URL`
 
----
+## Testing
 
-## What this project is meant to demonstrate
+Server unit/default suite:
 
-Given a fixed system that touches money, the ability to reason about: what actually needs a transaction and a lock, how to keep concurrent writers from corrupting shared state, how to make writes safe to retry, and how to keep every number traceable back to its source. That's the backend skill this repo is built to show — not the amount of code, but whether the guarantees actually hold under contention.
+```bash
+cd server
+npm test
+```
+
+Integration tests are present for accounts and transactions routes, plus a concurrency test, and are gated behind:
+
+- `RUN_INTEGRATION_TESTS=1`
+- a reachable Postgres test database (`TEST_DATABASE_URL` or `DATABASE_URL`)
+
+Client checks:
+
+```bash
+cd client
+npm run lint
+npm run build
+```
+
+## CI
+
+GitHub Actions workflow: `.github/workflows/ci.yml`
+
+On push and pull request:
+- Server: `npm ci`, `npm test`
+- Client: `npm ci`, `npm run lint`, `npm run build`

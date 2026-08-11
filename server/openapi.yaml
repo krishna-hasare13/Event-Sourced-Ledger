@@ -1,0 +1,170 @@
+openapi: 3.0.3
+info:
+  title: Ledger API
+  version: 1.0.0
+  description: Double-entry ledger with auth, idempotency, pagination, and audit trails.
+servers:
+  - url: /api
+paths:
+  /auth/register:
+    post:
+      summary: Register a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 8
+      responses:
+        '201':
+          description: User registered
+  /auth/login:
+    post:
+      summary: Log in a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 8
+      responses:
+        '200':
+          description: Authenticated
+  /accounts:
+    get:
+      summary: List the authenticated user's accounts
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: Paginated account list
+    post:
+      summary: Create an account for the authenticated user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, type]
+              properties:
+                name:
+                  type: string
+                type:
+                  type: string
+                  enum: [asset, liability, equity, credit]
+      responses:
+        '201':
+          description: Account created
+  /accounts/{id}:
+    get:
+      summary: Get one owned account
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Account details
+        '404':
+          description: Not found
+  /accounts/{id}/balance:
+    get:
+      summary: Get current or historical balance
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: asOf
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Balance response
+  /accounts/{id}/audit:
+    get:
+      summary: Get paginated audit trail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: cursor
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: Paginated audit trail
+  /transactions:
+    post:
+      summary: Create a double-entry transaction
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entries]
+              properties:
+                description:
+                  type: string
+                entries:
+                  type: array
+                  minItems: 2
+                  items:
+                    type: object
+                    required: [accountId, amount]
+                    properties:
+                      accountId:
+                        type: string
+                      amount:
+                        type: number
+      responses:
+        '201':
+          description: Transaction created

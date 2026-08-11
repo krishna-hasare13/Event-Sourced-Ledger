@@ -10,8 +10,20 @@ model Account {
   id        String   @id @default(uuid())
   name      String
   type      String   // "asset" | "liability" | "equity" | "credit"
+  ownerId   String?
+  owner     User?    @relation(fields: [ownerId], references: [id])
   createdAt DateTime @default(now())
   entries   Entry[]
+
+  @@index([ownerId, createdAt])
+}
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  hashedPassword  String
+  createdAt       DateTime  @default(now())
+  accounts        Account[]
 }
 
 model Transaction {
@@ -19,6 +31,15 @@ model Transaction {
   description String?
   createdAt   DateTime @default(now())
   entries     Entry[]
+}
+
+model IdempotencyKey {
+  key         String   @id
+  fingerprint String
+  resultId    String
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 model Entry {
